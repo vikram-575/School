@@ -1,0 +1,757 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum Status {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  PENDING
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+enum DeviceType {
+  WEB
+  ANDROID
+  IOS
+  DESKTOP
+}
+
+// ==========================================
+// CORE TENANT (COMPANY) MODELS - No school_id
+// ==========================================
+
+model Plan {
+  id           String  @id @default(uuid())
+  name         String  @unique
+  description  String?
+  priceMonthly Float
+  priceYearly  Float
+  maxStudents  Int
+  maxStorageGB Int
+  features     Json? // Array of feature keys
+
+  // Base fields
+  status    Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  subscriptions Subscription[]
+}
+
+model School {
+  id               String  @id @default(uuid())
+  name             String
+  subdomain        String? @unique
+  registrationCode String? @unique
+  address          String?
+  city             String?
+  state            String?
+  country          String?
+  zipCode          String?
+  contactEmail     String
+  contactPhone     String?
+  logoUrl          String?
+  website          String?
+
+  // Base fields
+  status    Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  // Relations
+  subscriptions  Subscription[]
+  users          User[]
+  roles          Role[]
+  auditLogs      AuditLog[]
+  activityLogs   ActivityLog[]
+  systemSettings SystemSetting[]
+
+  // Module 2 Relations
+  academicYears    AcademicYear[]
+  departments      Department[]
+  classes          Class[]
+  sections         Section[]
+  subjects         Subject[]
+  classSubjects    ClassSubject[]
+  employeeProfiles EmployeeProfile[]
+  studentProfiles  StudentProfile[]
+
+  // Module 3 Relations
+  attendanceRecords AttendanceRecord[]
+  leaveRequests     LeaveRequest[]
+  notices           Notice[]
+  periods           Period[]
+  timetableEntries  TimetableEntry[]
+
+  // Module 4 Relations
+  feeCategories     FeeCategory[]
+  feeStructures     FeeStructure[]
+  feeStructureItems FeeStructureItem[]
+  invoices          Invoice[]
+  invoiceItems      InvoiceItem[]
+  payments          Payment[]
+
+  // Module 5 Relations
+  exams             Exam[]
+  examResults       ExamResult[]
+}
+
+model Subscription {
+  id            String             @id @default(uuid())
+  schoolId      String
+  planId        String
+  status        SubscriptionStatus @default(ACTIVE)
+  validFrom     DateTime           @default(now())
+  validUntil    DateTime
+  paymentStatus String? // PAID, PENDING, FAILED
+  amountPaid    Float?
+
+  // Base fields
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  // Relations
+  school School @relation(fields: [schoolId], references: [id])
+  plan   Plan   @relation(fields: [planId], references: [id])
+}
+
+// ==========================================
+// AUTHENTICATION & USER MANAGEMENT
+// ==========================================
+
+model Role {
+  id          String  @id @default(uuid())
+  schoolId    String? // Nullable because Company roles don't belong to a school
+  name        String
+  description String?
+  isSystem    Boolean @default(false) // True for default roles like SUPER_ADMIN, PRINCIPAL
+
+  // Base fields
+  status    Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school      School?          @relation(fields: [schoolId], references: [id])
+  users       User[]
+  permissions RolePermission[]
+
+  @@unique([name, schoolId])
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  module      String // e.g. "STUDENT", "FEE", "ATTENDANCE"
+  action      String // e.g. "CREATE", "READ", "UPDATE", "DELETE"
+  description String?
+
+  roles RolePermission[]
+
+  @@unique([module, action])
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model User {
+  id       String  @id @default(uuid())
+  schoolId String? // Nullable for Company/Super Admins
+  roleId   String
+
+  email           String?
+  phone           String?
+  passwordHash    String
+  firstName       String
+  lastName        String
+  avatarUrl       String?
+  isEmailVerified Boolean @default(false)
+  isPhoneVerified Boolean @default(false)
+
+  // Base fields
+  status    Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  // Relations
+  school School? @relation(fields: [schoolId], references: [id])
+  role   Role    @relation(fields: [roleId], references: [id])
+
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  // Profiles (Module 2)
+  employeeProfile EmployeeProfile?
+  studentProfile  StudentProfile?  @relation("StudentUser")
+  children        StudentProfile[] @relation("ParentStudent")
+
+  // Module 3
+  attendanceRecords AttendanceRecord[]
+  leaveRequests     LeaveRequest[]
+  authoredNotices   Notice[]
+
+  @@unique([email, schoolId])
+  @@unique([phone, schoolId])
+}
+
+model Session {
+  id           String     @id @default(uuid())
+  userId       String
+  deviceType   DeviceType
+  deviceId     String?
+  ipAddress    String?
+  userAgent    String?
+  lastActiveAt DateTime   @default(now())
+  isRevoked    Boolean    @default(false)
+
+  // Base fields
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+
+  // Base fields
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// SYSTEM LOGS & SETTINGS
+// ==========================================
+
+model SystemSetting {
+  id          String  @id @default(uuid())
+  schoolId    String? // Null for global company settings
+  key         String
+  value       String
+  description String?
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@unique([schoolId, key])
+}
+
+model AuditLog {
+  id        String  @id @default(uuid())
+  schoolId  String?
+  userId    String?
+  action    String // CREATE, UPDATE, DELETE, LOGIN
+  entity    String // Table name
+  entityId  String? // Row ID
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  school School? @relation(fields: [schoolId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id          String  @id @default(uuid())
+  schoolId    String?
+  userId      String?
+  description String
+  module      String?
+
+  createdAt DateTime @default(now())
+
+  school School? @relation(fields: [schoolId], references: [id])
+}
+
+// ==========================================
+// ACADEMICS & HIERARCHY (MODULE 2)
+// ==========================================
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  schoolId  String
+  name      String   // e.g., "2026-2027"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id])
+
+  @@unique([name, schoolId])
+}
+
+model Department {
+  id          String  @id @default(uuid())
+  schoolId    String
+  name        String  // e.g., "Mathematics", "Administration"
+  description String?
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school    School            @relation(fields: [schoolId], references: [id])
+  employees EmployeeProfile[]
+
+  @@unique([name, schoolId])
+}
+
+model Class {
+  id       String @id @default(uuid())
+  schoolId String
+  name     String // e.g., "Class 10"
+  code     String?
+  order    Int    @default(0)
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school   School    @relation(fields: [schoolId], references: [id])
+  sections Section[]
+  feeStructures FeeStructure[]
+
+  @@unique([name, schoolId])
+}
+
+model Section {
+  id       String @id @default(uuid())
+  schoolId String
+  classId  String
+  name     String // e.g., "A", "B"
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school       School           @relation(fields: [schoolId], references: [id])
+  class        Class            @relation(fields: [classId], references: [id])
+  subjects     ClassSubject[]
+  students     StudentProfile[]
+  timetableEntries TimetableEntry[]
+
+  @@unique([name, classId, schoolId])
+}
+
+model Subject {
+  id       String @id @default(uuid())
+  schoolId String
+  name     String // e.g., "Physics"
+  code     String // e.g., "PHY-101"
+  type     String @default("THEORY") // THEORY, PRACTICAL
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  classSubjects ClassSubject[]
+  timetableEntries TimetableEntry[]
+  examResults   ExamResult[]
+
+  @@unique([code, schoolId])
+}
+
+model ClassSubject {
+  id        String  @id @default(uuid())
+  schoolId  String
+  sectionId String
+  subjectId String
+  teacherId String? // Assigned teacher's EmployeeProfile ID
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  school  School           @relation(fields: [schoolId], references: [id])
+  section Section          @relation(fields: [sectionId], references: [id])
+  subject Subject          @relation(fields: [subjectId], references: [id])
+  teacher EmployeeProfile? @relation(fields: [teacherId], references: [id])
+
+  @@unique([sectionId, subjectId, schoolId])
+}
+
+// ==========================================
+// USER PROFILES (MODULE 2)
+// ==========================================
+
+model EmployeeProfile {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  schoolId     String
+  employeeId   String    @unique // e.g., "EMP001"
+  departmentId String?
+  designation  String?
+  joiningDate  DateTime?
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  user          User           @relation(fields: [userId], references: [id])
+  school        School         @relation(fields: [schoolId], references: [id])
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  classSubjects ClassSubject[] // Subjects taught by this employee
+  timetableEntries TimetableEntry[]
+
+  @@unique([employeeId, schoolId])
+}
+
+model StudentProfile {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  schoolId        String
+  admissionNumber String  @unique
+  rollNumber      String?
+  currentSectionId String?
+  parentId        String? // Link to Parent User
+
+  // Base fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+
+  user           User     @relation("StudentUser", fields: [userId], references: [id])
+  school         School   @relation(fields: [schoolId], references: [id])
+  currentSection Section? @relation(fields: [currentSectionId], references: [id])
+  parent         User?    @relation("ParentStudent", fields: [parentId], references: [id])
+  invoices       Invoice[]
+  examResults    ExamResult[]
+
+  @@unique([admissionNumber, schoolId])
+}
+
+// ==========================================
+// DAILY OPERATIONS (MODULE 3)
+// ==========================================
+
+model AttendanceRecord {
+  id        String   @id @default(uuid())
+  schoolId  String
+  userId    String
+  date      DateTime @db.Date
+  status    String   // PRESENT, ABSENT, LATE, HALF_DAY
+  remarks   String?
+  markedBy  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date, schoolId])
+}
+
+model LeaveRequest {
+  id         String   @id @default(uuid())
+  schoolId   String
+  userId     String
+  type       String   // SICK, CASUAL, etc.
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  reason     String
+  status     String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Notice {
+  id             String    @id @default(uuid())
+  schoolId       String
+  title          String
+  content        String
+  type           String    // GENERAL, ACADEMIC, HOLIDAY
+  targetAudience String    // ALL, STUDENTS, TEACHERS, PARENTS
+  publishDate    DateTime
+  expiryDate     DateTime?
+  authorId       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id])
+  author User   @relation(fields: [authorId], references: [id])
+}
+
+model Period {
+  id        String @id @default(uuid())
+  schoolId  String
+  name      String // e.g. "1st Period"
+  startTime String // e.g. "09:00"
+  endTime   String // e.g. "09:45"
+  order     Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school         School           @relation(fields: [schoolId], references: [id])
+  timetableEntry TimetableEntry[]
+
+  @@unique([name, schoolId])
+}
+
+model TimetableEntry {
+  id        String @id @default(uuid())
+  schoolId  String
+  sectionId String
+  subjectId String
+  teacherId String? // Optional if not yet assigned
+  periodId  String
+  dayOfWeek Int    // 0 = Sunday, 1 = Monday, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school  School           @relation(fields: [schoolId], references: [id])
+  section Section          @relation(fields: [sectionId], references: [id])
+  subject Subject          @relation(fields: [subjectId], references: [id])
+  teacher EmployeeProfile? @relation(fields: [teacherId], references: [id])
+  period  Period           @relation(fields: [periodId], references: [id])
+
+  @@unique([sectionId, periodId, dayOfWeek, schoolId])
+}
+
+// ==========================================
+// FINANCE & FEE MANAGEMENT (MODULE 4)
+// ==========================================
+
+model FeeCategory {
+  id          String  @id @default(uuid())
+  schoolId    String
+  name        String  // e.g. "Tuition Fee", "Transport Fee"
+  description String?
+  amount      Float
+  frequency   String  // MONTHLY, YEARLY, ONCE
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school             School             @relation(fields: [schoolId], references: [id])
+  feeStructureItems  FeeStructureItem[]
+  invoiceItems       InvoiceItem[]
+
+  @@unique([name, schoolId])
+}
+
+model FeeStructure {
+  id          String  @id @default(uuid())
+  schoolId    String
+  name        String  // e.g. "Class 10 Annual Fees"
+  description String?
+  classId     String? // Optional: bind to a specific class
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school School  @relation(fields: [schoolId], references: [id])
+  class  Class?  @relation(fields: [classId], references: [id])
+  items  FeeStructureItem[]
+
+  @@unique([name, schoolId])
+}
+
+model FeeStructureItem {
+  id             String @id @default(uuid())
+  schoolId       String
+  feeStructureId String
+  feeCategoryId  String
+  
+  createdAt DateTime @default(now())
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  feeStructure FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeCategory  FeeCategory  @relation(fields: [feeCategoryId], references: [id])
+
+  @@unique([feeStructureId, feeCategoryId, schoolId])
+}
+
+model Invoice {
+  id          String   @id @default(uuid())
+  schoolId    String
+  studentId   String
+  title       String   // e.g. "Term 1 Fees"
+  dueDate     DateTime
+  totalAmount Float
+  status      String   @default("UNPAID") // PAID, UNPAID, PARTIAL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school  School         @relation(fields: [schoolId], references: [id])
+  student StudentProfile @relation(fields: [studentId], references: [id])
+  items   InvoiceItem[]
+  payments Payment[]
+}
+
+model InvoiceItem {
+  id            String @id @default(uuid())
+  schoolId      String
+  invoiceId     String
+  feeCategoryId String
+  amount        Float
+
+  createdAt DateTime @default(now())
+
+  school      School      @relation(fields: [schoolId], references: [id])
+  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  schoolId        String
+  invoiceId       String
+  amount          Float
+  paymentMethod   String   // CASH, ONLINE, CHEQUE
+  paymentDate     DateTime @default(now())
+  referenceNumber String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  school  School  @relation(fields: [schoolId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+ 
+ 
+
+
+// ==========================================
+// EXAMINATIONS & PERFORMANCE (MODULE 5)
+// ==========================================
+
+model Exam {
+  id          String   @id @default(uuid())
+  schoolId    String
+  name        String   // e.g. " Mid Term Exams\
+ description String?
+ startDate DateTime @db.Date
+ endDate DateTime @db.Date
+ 
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ deletedAt DateTime?
+
+ school School @relation(fields: [schoolId], references: [id])
+ results ExamResult[]
+
+ @@unique([name, schoolId])
+}
+
+model ExamResult {
+ id String @id @default(uuid())
+ schoolId String
+ examId String
+ studentId String
+ subjectId String
+ marksObtained Float
+ maxMarks Float
+ grade String? // e.g. \A\, \B+\
+ remarks String?
+
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ deletedAt DateTime?
+
+ school School @relation(fields: [schoolId], references: [id])
+ exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+ student StudentProfile @relation(fields: [studentId], references: [id])
+ subject Subject @relation(fields: [subjectId], references: [id])
+
+ @@unique([examId, studentId, subjectId, schoolId])
+}
+
