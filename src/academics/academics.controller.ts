@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, Req, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Put, Body, Req, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AcademicsService } from './academics.service';
 
@@ -55,5 +55,15 @@ export class AcademicsController {
   @Post('subjects')
   createSubject(@Req() req: any, @Body() body: any) {
     return this.academicsService.createSubject(req.user.schoolId, body);
+  }
+
+  @Put('sections/:id/class-teacher')
+  assignClassTeacher(@Param('id') sectionId: string, @Req() req: any, @Body() body: { teacherId: string }) {
+    return this.academicsService.assignClassTeacher(req.user.schoolId, sectionId, body.teacherId);
+  }
+
+  @Put('class-subjects/:id/teacher')
+  assignSubjectTeacher(@Param('id') classSubjectId: string, @Req() req: any, @Body() body: { teacherId: string }) {
+    return this.academicsService.assignSubjectTeacher(req.user.schoolId, classSubjectId, body.teacherId);
   }
 }

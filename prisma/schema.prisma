@@ -394,6 +394,8 @@ model Section {
 
   school       School           @relation(fields: [schoolId], references: [id])
   class        Class            @relation(fields: [classId], references: [id])
+  classTeacherId String?        // Optional class teacher
+  classTeacher   EmployeeProfile? @relation(fields: [classTeacherId], references: [id])
   subjects     ClassSubject[]
   students     StudentProfile[]
   timetableEntries TimetableEntry[]
@@ -470,6 +472,7 @@ model EmployeeProfile {
   department    Department?    @relation(fields: [departmentId], references: [id])
   classSubjects ClassSubject[] // Subjects taught by this employee
   timetableEntries TimetableEntry[]
+  classSections Section[]      // Sections where this employee is the class teacher
 
   @@unique([employeeId, schoolId])
 }

@@ -22,13 +22,22 @@ const userSelect = {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(user: RequestUser, roleName?: string, requestedSchoolId?: string) {
+  findAll(user: RequestUser, roleName?: string, requestedSchoolId?: string, sectionId?: string) {
     const schoolId = user.role === 'SUPER_ADMIN' ? requestedSchoolId : user.schoolId ?? undefined;
+    
+    const whereClause: Prisma.UserWhereInput = {
+      schoolId,
+      role: roleName ? { name: roleName } : undefined
+    };
+
+    if (sectionId && roleName === 'STUDENT') {
+      whereClause.studentProfile = {
+        currentSectionId: sectionId
+      };
+    }
+
     return this.prisma.user.findMany({
-      where: { 
-        schoolId, 
-        role: roleName ? { name: roleName } : undefined 
-      },
+      where: whereClause,
       select: userSelect,
       orderBy: { firstName: 'asc' },
     });
@@ -144,5 +153,90 @@ export class UsersService {
       throw new ForbiddenException('Cannot access users outside your school');
     }
     return found;
+  }
+
+  async update(id: string, user: RequestUser, data: any) {
+    const found = await this.prisma.user.findUnique({ where: { id } });
+    if (!found) throw new NotFoundException('User not found');
+    if (user.role !== 'SUPER_ADMIN' && found.schoolId !== user.schoolId) {
+      throw new ForbiddenException('Cannot modify users outside your school');
+    }
+
+    const updateData: any = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      phone: data.phone,
+    };
+
+    if (data.role) {
+      const roleRecord = await this.prisma.role.findFirst({ where: { name: data.role, schoolId: found.schoolId || '' } }) ||
+                         await this.prisma.role.findFirst({ where: { name: data.role, isSystem: true } });
+      if (roleRecord) {
+        updateData.role = { connect: { id: roleRecord.id } };
+      }
+    }
+
+    // Profiles
+    if (found.roleId) {
+      const role = await this.prisma.role.findUnique({ where: { id: found.roleId }});
+      if (role?.name === 'STUDENT' && data.admissionNumber) {
+        updateData.studentProfile = {
+          upsert: {
+            create: { schoolId: found.schoolId as string, admissionNumber: data.admissionNumber },
+            update: { admissionNumber: data.admissionNumber }
+          }
+        };
+      } else if (role && ['TEACHER', 'STAFF', 'PRINCIPAL'].includes(role.name) && data.employeeId) {
+        updateData.employeeProfile = {
+          upsert: {
+            create: { schoolId: found.schoolId as string, employeeId: data.employeeId },
+            update: { employeeId: data.employeeId }
+          }
+        };
+      }
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: userSelect,
+    });
+  }
+
+  async remove(id: string, user: RequestUser) {
+    const found = await this.prisma.user.findUnique({ where: { id } });
+    if (!found) throw new NotFoundException('User not found');
+    if (user.role !== 'SUPER_ADMIN' && found.schoolId !== user.schoolId) {
+      throw new ForbiddenException('Cannot delete users outside your school');
+    }
+
+    // Attempt to delete from Supabase Auth if applicable
+    if (found.email) {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && supabaseServiceKey) {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        
+        // Find user by email in Supabase to get their auth ID
+        const { data: usersData } = await supabase.auth.admin.listUsers();
+        const sbUser = usersData?.users?.find((u: any) => u.email === found.email);
+        
+        if (sbUser) {
+          await supabase.auth.admin.deleteUser(sbUser.id);
+        }
+      }
+    }
+
+    // Delete profiles manually first due to foreign keys, or rely on Cascade if configured.
+    // In schema.prisma, EmployeeProfile/StudentProfile don't explicitly have onDelete: Cascade for the User relation.
+    // So we manually delete them.
+    await this.prisma.employeeProfile.deleteMany({ where: { userId: id } });
+    await this.prisma.studentProfile.deleteMany({ where: { userId: id } });
+
+    return this.prisma.user.delete({
+      where: { id },
+    });
   }
 }

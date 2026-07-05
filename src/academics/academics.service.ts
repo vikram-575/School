@@ -77,7 +77,37 @@ export class AcademicsService {
 
   async createSubject(schoolId: string, data: any) {
     return this.prisma.subject.create({
-      data: { ...data, schoolId },
+      data: {
+        schoolId,
+        name: data.name,
+        code: data.code,
+        type: data.type || "THEORY",
+      }
+    });
+  }
+
+  async assignClassTeacher(schoolId: string, sectionId: string, employeeId: string) {
+    // Find internal employeeProfile id using employeeId
+    const employee = await this.prisma.employeeProfile.findFirst({
+      where: { schoolId, employeeId }
+    });
+    if (!employee) throw new Error('Employee not found');
+
+    return this.prisma.section.update({
+      where: { id: sectionId },
+      data: { classTeacherId: employee.id }
+    });
+  }
+
+  async assignSubjectTeacher(schoolId: string, classSubjectId: string, employeeId: string) {
+    const employee = await this.prisma.employeeProfile.findFirst({
+      where: { schoolId, employeeId }
+    });
+    if (!employee) throw new Error('Employee not found');
+
+    return this.prisma.classSubject.update({
+      where: { id: classSubjectId },
+      data: { teacherId: employee.id }
     });
   }
 }

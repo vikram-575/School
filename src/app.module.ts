@@ -10,9 +10,10 @@ import { AuthModule } from './auth/auth.module';
 import { TenantMiddleware } from './core/tenant.middleware';
 import { OperationsModule } from './operations/operations.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
-  imports: [AuthModule, UsersModule, SchoolsModule, AcademicsModule, FinanceModule, ChatModule, OperationsModule, DashboardModule],
+  imports: [AuthModule, UsersModule, SchoolsModule, AcademicsModule, FinanceModule, ChatModule, OperationsModule, DashboardModule, ReportsModule],
   controllers: [AppController],
   providers: [AppService],
 })
