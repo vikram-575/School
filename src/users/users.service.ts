@@ -63,6 +63,26 @@ export class UsersService {
         throw new ForbiddenException(`Role ${data.role} not found`);
     }
 
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && supabaseServiceKey && data.email && data.password) {
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      const { error: authError } = await supabase.auth.admin.createUser({
+        email: data.email,
+        password: data.password,
+        email_confirm: true,
+        user_metadata: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          role: data.role,
+        },
+      });
+      if (authError) {
+        throw new ForbiddenException(`Failed to create user in Supabase: ${authError.message}`);
+      }
+    }
+
     const userData: Prisma.UserCreateInput = {
       email: data.email,
       phone: data.phone,
