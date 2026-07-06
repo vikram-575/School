@@ -100,6 +100,40 @@ export declare class AcademicsController {
             updatedBy: string | null;
             deletedAt: Date | null;
         };
+        classTeacher: ({
+            user: {
+                id: string;
+                schoolId: string | null;
+                roleId: string;
+                email: string | null;
+                phone: string | null;
+                passwordHash: string;
+                firstName: string;
+                lastName: string;
+                avatarUrl: string | null;
+                isEmailVerified: boolean;
+                isPhoneVerified: boolean;
+                status: import(".prisma/client").$Enums.Status;
+                createdAt: Date;
+                updatedAt: Date;
+                createdBy: string | null;
+                updatedBy: string | null;
+                deletedAt: Date | null;
+            };
+        } & {
+            id: string;
+            userId: string;
+            schoolId: string;
+            employeeId: string;
+            departmentId: string | null;
+            designation: string | null;
+            joiningDate: Date | null;
+            createdAt: Date;
+            updatedAt: Date;
+            createdBy: string | null;
+            updatedBy: string | null;
+            deletedAt: Date | null;
+        }) | null;
     } & {
         id: string;
         schoolId: string;

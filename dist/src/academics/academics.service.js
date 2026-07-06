@@ -51,7 +51,10 @@ let AcademicsService = class AcademicsService {
             where.classId = classId;
         return this.prisma.section.findMany({
             where,
-            include: { class: true },
+            include: {
+                class: true,
+                classTeacher: { include: { user: true } }
+            },
             orderBy: { name: 'asc' }
         });
     }

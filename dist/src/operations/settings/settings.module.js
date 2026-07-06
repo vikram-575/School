@@ -6,19 +6,20 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OperationsModule = void 0;
+exports.SettingsModule = void 0;
 const common_1 = require("@nestjs/common");
-const operations_service_1 = require("./operations.service");
-const operations_controller_1 = require("./operations.controller");
-const settings_module_1 = require("./settings/settings.module");
-let OperationsModule = class OperationsModule {
+const settings_controller_1 = require("./settings.controller");
+const settings_service_1 = require("./settings.service");
+const prisma_module_1 = require("../../prisma/prisma.module");
+let SettingsModule = class SettingsModule {
 };
-exports.OperationsModule = OperationsModule;
-exports.OperationsModule = OperationsModule = __decorate([
+exports.SettingsModule = SettingsModule;
+exports.SettingsModule = SettingsModule = __decorate([
     (0, common_1.Module)({
-        imports: [settings_module_1.SettingsModule],
-        providers: [operations_service_1.OperationsService],
-        controllers: [operations_controller_1.OperationsController]
+        imports: [prisma_module_1.PrismaModule],
+        controllers: [settings_controller_1.SettingsController],
+        providers: [settings_service_1.SettingsService],
+        exports: [settings_service_1.SettingsService],
     })
-], OperationsModule);
-//# sourceMappingURL=operations.module.js.map
+], SettingsModule);
+//# sourceMappingURL=settings.module.js.map
